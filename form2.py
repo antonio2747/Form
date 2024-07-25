@@ -1,28 +1,20 @@
 import streamlit as st
-import pdf2image
-import pytesseract
+import fitz  # PyMuPDF
 import re
 import tempfile
 import os
-import nltk
 from nameparser import HumanName
 import spacy
-
-poppler_path = "D:/pythonProject1/Release-24.07.0-0/poppler-24.07.0/Library/bin"
-
-pytesseract.pytesseract.tesseract_cmd = r"C:/Program Files/Tesseract-OCR/tesseract.exe"
 
 # Load spaCy model
 nlp = spacy.load("en_core_web_sm")
 
-# Function to convert PDF to images
-def convert_pdf_to_images(pdf_path):
-    images = pdf2image.convert_from_path(pdf_path, poppler_path=poppler_path)
-    return images
-
-# Function to perform OCR on images
-def ocr_on_image(image):
-    text = pytesseract.image_to_string(image)
+# Function to extract text from PDF using PyMuPDF
+def extract_text_from_pdf(pdf_path):
+    text = ""
+    with fitz.open(pdf_path) as doc:
+        for page in doc:
+            text += page.get_text()
     return text
 
 # Function to extract emails using regex
@@ -35,41 +27,40 @@ def extract_phone_numbers(text):
     phone_pattern = r'\+?\d[\d -]{8,}\d'
     return re.findall(phone_pattern, text)
 
-# Function to extract addresses using spaCy NER and regex
-def extract_addresses(text):
-    # A more flexible regex pattern to capture addresses
-    address_pattern = r'(\d{1,5}[A-Za-z\s,.-]+(?:\s[A-Za-z\s,.-]+)*[A-Za-z\s,.-]*,\s*[A-Za-z\s]+(?:\s[A-Za-z\s]+)*,\s*[A-Za-z\s]+(?:\s[A-Za-z\s]+)*,\s*\d{6})'
+def preprocess_text_for_spacy(text):
+    doc = nlp(text)
+    return doc
+# Function to extract addresses using regex
+def extract_addresses_with_spacy(text):
+    addresses = []
+    doc = preprocess_text_for_spacy(text)
 
-    addresses = re.findall(address_pattern, text)
-    cleaned_addresses = [addr.strip() for addr in addresses]
+    for ent in doc.ents:
+        if ent.label_ == "GPE":  # Check if entity is a location
+            address = ent.text
+            # Check if address ends with 6-digit pincode
+            if re.search(r'[0-9]{1,3} .+, .+, [A-Z]{2} [0-9]{3}', address):
+                addresses.append(address)
 
-    return cleaned_addresses
+    return addresses
 
-# Function to extract names using nameparser
-def extract_names(text):
+
+# Function to extract name from the first line using spaCy and nameparser
+def extract_name_from_first_line(text):
     first_line = text.strip().split("\n")[0]
-    name = HumanName(first_line)
-    if name.first or name.last:
+    # Check if the first line is a person's name
+    if first_line:
+        # Remove email from the first line if present
+        first_line = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', '', first_line).strip()
+        name = HumanName(first_line)
         return name
-    else:
-        return None
+    return HumanName("")  # Return empty name if not identified as a person
 
 # Function to process extracted names into first and last names
 def process_names(name):
     if name:
-        name_parts = name.full_name.split()
-        if len(name_parts) == 2:
-            first_name = name_parts[0]
-            last_name = name_parts[1]
-        elif len(name_parts) > 2:
-            first_name = " ".join(name_parts[:-1])
-            last_name = name_parts[-1]
-            if len(last_name) == 1:  # Check if last name is a single alphabet
-                last_name = name_parts[-2] + " " + last_name  # Combine it with the previous name part
-                first_name = " ".join(name_parts[:-2])
-        else:
-            first_name = name_parts[0]
-            last_name = ""
+        first_name = name.first
+        last_name = name.last
     else:
         first_name = "Not Found"
         last_name = "Not Found"
@@ -93,13 +84,11 @@ if uploaded_file is not None:
         temp_pdf.write(uploaded_file.getbuffer())
         temp_pdf_path = temp_pdf.name
 
-    # Convert PDF to images
-    images = convert_pdf_to_images(temp_pdf_path)
+        # Extract text from PDF
+        extracted_text = extract_text_from_pdf(temp_pdf_path)
 
-    # Perform OCR on all images and combine the text
-    extracted_text = ""
-    for image in images:
-        extracted_text += ocr_on_image(image) + "\n"
+    # Clean up temporary file
+    os.remove(temp_pdf_path)
 
     # Display the extracted text
     st.text_area("Extracted Text", extracted_text, height=200)
@@ -108,12 +97,12 @@ if uploaded_file is not None:
     emails = extract_emails(extracted_text)
     phone_numbers = extract_phone_numbers(extracted_text)
 
-    # Extract addresses using spaCy NER and regex
-    addresses = extract_addresses(extracted_text)
+    # Extract addresses using regex
+    addresses = extract_addresses_with_spacy(extracted_text)
     address = addresses[0] if addresses else "Not Found"
 
-    # Extract names using nameparser
-    name = extract_names(extracted_text)
+    # Extract name from the first line using spaCy and nameparser
+    name = extract_name_from_first_line(extracted_text)
     first_name, last_name = process_names(name)
 
     # Set default values if no data is found
@@ -154,6 +143,3 @@ if uploaded_file is not None:
         st.write("Address:", address_input)
         st.write("Education:", education_input)
         st.write("Experience:", experience_input)
-
-    # Clean up temporary file
-    os.remove(temp_pdf_path)
