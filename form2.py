@@ -42,28 +42,6 @@ if not os.path.exists(BRAVE_PATH):
     raise FileNotFoundError(f"Brave browser not found at path: {BRAVE_PATH}")
 
 
-def wait_for_element_to_be_clickable(driver, xpath, timeout=30):
-    try:
-        WebDriverWait(driver, timeout).until(
-            EC.element_to_be_clickable((By.XPATH, xpath))
-        )
-    except Exception as e:
-        print(f"Error waiting for element to be clickable: {e}")
-        return None
-    return driver.find_element(By.XPATH, xpath)
-
-
-def scroll_element_into_view(driver, element):
-    driver.execute_script("arguments[0].scrollIntoView(true);", element)
-
-
-def set_value_using_js(driver, xpath, value):
-    try:
-        element = driver.find_element(By.XPATH, xpath)
-        driver.execute_script("arguments[0].value = arguments[1];", element, value)
-    except Exception as e:
-        print(f"Error setting value using JS: {e}")
-
 
 def fill_form(driver, data):
     field_mappings = {
