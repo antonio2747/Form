@@ -30,8 +30,8 @@ def load_spacy_model(model_name="en_core_web_lg"):
 nlp = load_spacy_model()
 
 # Load pre-trained BART model and tokenizer
-@st.cache_resource(tokenizer = BartTokenizer.from_pretrained('facebook/bart-large-cnn'))
-@st.cache_resource(model = BartForConditionalGeneration.from_pretrained('facebook/bart-large-cnn'))
+tokenizer = BartTokenizer.from_pretrained('facebook/bart-large-cnn')
+model = BartForConditionalGeneration.from_pretrained('facebook/bart-large-cnn')
 
 
 def fill_form(driver, data):
