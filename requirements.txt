@@ -7,3 +7,5 @@ spacy==3.7.0
 thinc>=8.1.8,<8.3.0
 cython
 numpy
+#model link spacy
+https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.7.1/en_core_web_lg-3.7.1-py3-none-any.whl
