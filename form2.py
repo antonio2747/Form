@@ -86,6 +86,7 @@ def extract_phone_numbers(text):
 
 
 # Function to summarize text using BART
+@st.cache_resource
 def summarize_text(text):
     text = text.replace('\n', ' ')
     inputs = tokenizer.encode("summarize: " + text, return_tensors="pt", max_length=1024, truncation=True)
@@ -95,6 +96,7 @@ def summarize_text(text):
 
 
 # Function to extract person names using spaCy
+@st.cache_resource
 def extract_person_from_text(text):
     doc = nlp(text)
     labels_dict = {}
@@ -107,6 +109,7 @@ def extract_person_from_text(text):
 
 
 # Function to extract addresses with spaCy
+@st.cache_resource
 def extract_addresses_with_spacy(text):
     cleaned_text = text.replace('\n', '')
     address_entities = []
