@@ -1,10 +1,10 @@
 streamlit
 fitz
-spacy
 transformers
 torch
 selenium
-thinc==8.1.0  # Add a specific version of thinc if necessary
+spacy==3.4.0
+thinc==8.1.0
 cython
 numpy
 # Direct model download if needed
