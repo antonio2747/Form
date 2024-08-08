@@ -4,5 +4,8 @@ spacy
 transformers
 torch
 selenium
+thinc==8.1.0  # Add a specific version of thinc if necessary
+cython
+numpy
 # Direct model download if needed
 https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.5.0/en_core_web_lg-3.5.0.tar.gz
