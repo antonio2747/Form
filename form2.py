@@ -59,7 +59,6 @@ def fill_form(driver, data):
 # Function to get ChromeDriver with Brave Browser
 def get_chrome_driver():
     options = Options()
-    options.add_argument('--disable-gpu')
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
     return driver
 
