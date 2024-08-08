@@ -4,6 +4,7 @@ import re
 import tempfile
 import os
 import spacy
+from spacy.cli import download
 from transformers.models.bart import BartTokenizer, BartForConditionalGeneration
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -14,7 +15,17 @@ from selenium.webdriver.support import expected_conditions as EC
 import time
 
 # Load spaCy model
-nlp = spacy.load("en_core_web_lg")
+def load_spacy_model(model_name="en_core_web_lg"):
+    # Check if the model is already installed
+    if not spacy.util.is_package(model_name):
+        print(f"Model '{model_name}' not found. Downloading...")
+        download(model_name)
+
+    # Load the model
+    nlp = spacy.load(model_name)
+    return nlp
+
+nlp = load_spacy_model()
 
 # Load pre-trained BART model and tokenizer
 tokenizer = BartTokenizer.from_pretrained('facebook/bart-large-cnn')
