@@ -16,7 +16,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 import time
 
 # Load spaCy model
-@st.cache
+@st.cache_resource
 def load_spacy_model(model_name="en_core_web_lg"):
     # Check if the model is already installed
     if not spacy.util.is_package(model_name):
@@ -30,8 +30,8 @@ def load_spacy_model(model_name="en_core_web_lg"):
 nlp = load_spacy_model()
 
 # Load pre-trained BART model and tokenizer
-@st.cache(tokenizer = BartTokenizer.from_pretrained('facebook/bart-large-cnn'))
-@st.cache(model = BartForConditionalGeneration.from_pretrained('facebook/bart-large-cnn'))
+@st.cache_resource(tokenizer = BartTokenizer.from_pretrained('facebook/bart-large-cnn'))
+@st.cache_resource(model = BartForConditionalGeneration.from_pretrained('facebook/bart-large-cnn'))
 
 
 def fill_form(driver, data):
