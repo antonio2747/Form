@@ -32,17 +32,6 @@ nlp = load_spacy_model()
 tokenizer = BartTokenizer.from_pretrained('facebook/bart-large-cnn')
 model = BartForConditionalGeneration.from_pretrained('facebook/bart-large-cnn')
 
-# Define paths for ChromeDriver and Brave Browser
-CHROMEDRIVER_PATH = "D:/pythonProject1/chromedriver-win64/chromedriver-win64/chromedriver.exe"
-BRAVE_PATH = 'C:/Program Files/BraveSoftware/Brave-Browser/Application/brave.exe'
-
-# Ensure the paths are valid
-if not os.path.exists(CHROMEDRIVER_PATH):
-    raise FileNotFoundError(f"ChromeDriver not found at path: {CHROMEDRIVER_PATH}")
-if not os.path.exists(BRAVE_PATH):
-    raise FileNotFoundError(f"Brave browser not found at path: {BRAVE_PATH}")
-
-
 
 def fill_form(driver, data):
     field_mappings = {
