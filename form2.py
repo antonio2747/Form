@@ -3,11 +3,88 @@ import fitz  # PyMuPDF
 import re
 import tempfile
 import os
-from nameparser import HumanName
 import spacy
+from transformers.models.bart import BartTokenizer, BartForConditionalGeneration
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+import time
 
 # Load spaCy model
-nlp = spacy.load("en_core_web_sm")
+nlp = spacy.load("en_core_web_lg")
+
+# Load pre-trained BART model and tokenizer
+tokenizer = BartTokenizer.from_pretrained('facebook/bart-large-cnn')
+model = BartForConditionalGeneration.from_pretrained('facebook/bart-large-cnn')
+
+# Define paths for ChromeDriver and Brave Browser
+CHROMEDRIVER_PATH = "D:/pythonProject1/chromedriver-win64/chromedriver-win64/chromedriver.exe"
+BRAVE_PATH = 'C:/Program Files/BraveSoftware/Brave-Browser/Application/brave.exe'
+
+# Ensure the paths are valid
+if not os.path.exists(CHROMEDRIVER_PATH):
+    raise FileNotFoundError(f"ChromeDriver not found at path: {CHROMEDRIVER_PATH}")
+if not os.path.exists(BRAVE_PATH):
+    raise FileNotFoundError(f"Brave browser not found at path: {BRAVE_PATH}")
+
+
+def wait_for_element_to_be_clickable(driver, xpath, timeout=30):
+    try:
+        WebDriverWait(driver, timeout).until(
+            EC.element_to_be_clickable((By.XPATH, xpath))
+        )
+    except Exception as e:
+        print(f"Error waiting for element to be clickable: {e}")
+        return None
+    return driver.find_element(By.XPATH, xpath)
+
+
+def scroll_element_into_view(driver, element):
+    driver.execute_script("arguments[0].scrollIntoView(true);", element)
+
+
+def set_value_using_js(driver, xpath, value):
+    try:
+        element = driver.find_element(By.XPATH, xpath)
+        driver.execute_script("arguments[0].value = arguments[1];", element, value)
+    except Exception as e:
+        print(f"Error setting value using JS: {e}")
+
+
+def fill_form(driver, data):
+    field_mappings = {
+        'Name1': ['First Name', 'first name', 'fname', 'Fname', 'Name', 'NAME', 'name'],
+        'Name2': ['Last Name', 'last name', 'lname', 'Lname', 'Family Name', 'Family name'],
+        'email': ['email', 'e-mail', 'mail', 'Email', 'EMAIL'],
+        'address': ['address', 'location', 'ADDRESS', 'Address'],
+        'mobile': ['phone', 'telephone', 'contact', 'Mobile', 'Phone', 'Phone number', 'Mobile number']
+    }
+    my_form = dict(zip(field_mappings.keys(), data))
+
+    for field, data in my_form.items():
+        # Try each possible field name until we find a match
+        for possible_name in field_mappings[field]:
+            try:
+                text_input = driver.find_element(by='xpath',
+                                                 value=f'//div[contains(@data-params, "{possible_name}")]//textarea | '
+                                                       f'//div[contains(@data-params, "{possible_name}")]//input')
+                text_input.send_keys(data)
+                break  # Exit loop if the field is found
+            except:
+                continue  # Try next possible name
+
+
+# Function to get ChromeDriver with Brave Browser
+def get_chrome_driver():
+    chrome_options = Options()
+    chrome_options.binary_location = BRAVE_PATH
+    chrome_service = Service(CHROMEDRIVER_PATH)
+    driver = webdriver.Chrome(service=chrome_service, options=chrome_options)
+    return driver
+
 
 # Function to extract text from PDF using PyMuPDF
 def extract_text_from_pdf(pdf_path):
@@ -17,129 +94,167 @@ def extract_text_from_pdf(pdf_path):
             text += page.get_text()
     return text
 
+
 # Function to extract emails using regex
 def extract_emails(text):
     email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
     return re.findall(email_pattern, text)
+
 
 # Function to extract phone numbers using regex
 def extract_phone_numbers(text):
     phone_pattern = r'\+?\d[\d -]{8,}\d'
     return re.findall(phone_pattern, text)
 
-def preprocess_text_for_spacy(text):
+
+# Function to summarize text using BART
+def summarize_text(text):
+    text = text.replace('\n', ' ')
+    inputs = tokenizer.encode("summarize: " + text, return_tensors="pt", max_length=1024, truncation=True)
+    summary_ids = model.generate(inputs, max_length=150, min_length=30, length_penalty=2.0, num_beams=4, early_stopping=True)
+    summary = tokenizer.decode(summary_ids[0], skip_special_tokens=True)
+    return summary
+
+
+# Function to extract person names using spaCy
+def extract_person_from_text(text):
     doc = nlp(text)
-    return doc
-# Function to extract addresses using regex
-def extract_addresses_with_spacy(text):
-    addresses = []
-    doc = preprocess_text_for_spacy(text)
-
+    labels_dict = {}
     for ent in doc.ents:
-        if ent.label_ == "GPE":  # Check if entity is a location
-            address = ent.text
-            # Check if address ends with 6-digit pincode
-            if re.search(r'[0-9]{1,3} .+, .+, [A-Z]{2} [0-9]{3}', address):
-                addresses.append(address)
-
-    return addresses
+        if ent.label_ not in labels_dict:
+            labels_dict[ent.label_] = []
+        labels_dict[ent.label_].append(ent.text)
+    person_name = labels_dict.get('PERSON', [None])[0]
+    return person_name
 
 
-# Function to extract name from the first line using spaCy and nameparser
-def extract_name_from_first_line(text):
-    first_line = text.strip().split("\n")[0]
-    # Check if the first line is a person's name
-    if first_line:
-        # Remove email from the first line if present
-        first_line = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', '', first_line).strip()
-        name = HumanName(first_line)
-        return name
-    return HumanName("")  # Return empty name if not identified as a person
+# Function to extract addresses with spaCy
+def extract_addresses_with_spacy(text):
+    cleaned_text = text.replace('\n', '')
+    address_entities = []
+    doc = nlp(cleaned_text)
+    fac_found = False
+    for ent in doc.ents:
+        if ent.label_ == "FAC":
+            address_entities.append(ent.text)
+            fac_found = True
+        elif fac_found and ent.label_ in ["ADDRESS", "GPE", "LOC"]:
+            address_entities.append(ent.text)
+            if len(address_entities) == 3:
+                break
+
+    # If no FAC entity was found, collect the first two ADDRESS, GPE, or LOC entities
+    if not fac_found:
+        address_entities = []
+        for ent in doc.ents:
+            if ent.label_ in ["ADDRESS", "GPE", "LOC"]:
+                address_entities.append(ent.text)
+                if len(address_entities) == 2:
+                    break
+    address = ' '.join(address_entities)
+    return address
+
 
 # Function to process extracted names into first and last names
-def process_names(name):
-    if name:
-        first_name = name.first
-        last_name = name.last
-    else:
-        first_name = "Not Found"
-        last_name = "Not Found"
-    return first_name, last_name
+def split_name(text):
+    if text:
+        name_parts = text.split()
+        if len(name_parts) == 1:
+            first_name = name_parts[0]
+            last_name = ''
+        elif len(name_parts) == 2:
+            first_name, last_name = name_parts
+        else:
+            first_name = name_parts[0]
+            last_name = name_parts[-1]
+        return first_name, last_name
+    return None, None
 
-def preprocess_text(text):
-    subheadings = ["Education", "Experience", "Skills", "Projects", "Certifications", "Languages"]
-    for subheading in subheadings:
-        text = re.sub(rf'\s*{subheading}\s*', f'\n{subheading}\n', text, flags=re.IGNORECASE)
-    return text
 
 # Streamlit app
-st.title("Resume Upload and Form Fill")
+def main():
+    st.title("Resume Upload and Form Fill")
 
-# Upload PDF
-uploaded_file = st.file_uploader("Choose a resume PDF file", type="pdf")
+    uploaded_file = st.file_uploader("Choose a resume PDF file", type="pdf")
 
-if uploaded_file is not None:
-    # Save the uploaded file to a temporary location
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_pdf:
-        temp_pdf.write(uploaded_file.getbuffer())
-        temp_pdf_path = temp_pdf.name
+    if uploaded_file is not None:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_pdf:
+            temp_pdf.write(uploaded_file.getbuffer())
+            temp_pdf_path = temp_pdf.name
 
-        # Extract text from PDF
-        extracted_text = extract_text_from_pdf(temp_pdf_path)
+            extracted_text = extract_text_from_pdf(temp_pdf_path)
 
-    # Clean up temporary file
-    os.remove(temp_pdf_path)
+        os.remove(temp_pdf_path)
 
-    # Display the extracted text
-    st.text_area("Extracted Text", extracted_text, height=200)
+        st.text_area("Extracted Text", extracted_text, height=200)
 
-    # Extract emails and phone numbers
-    emails = extract_emails(extracted_text)
-    phone_numbers = extract_phone_numbers(extracted_text)
+        emails = extract_emails(extracted_text)
+        phone_numbers = extract_phone_numbers(extracted_text)
+        address = extract_addresses_with_spacy(extracted_text)
+        name = extract_person_from_text(summarize_text(extracted_text))
+        first_name, last_name = split_name(name)
 
-    # Extract addresses using regex
-    addresses = extract_addresses_with_spacy(extracted_text)
-    address = addresses[0] if addresses else "Not Found"
+        email = emails[0] if emails else "Not Found"
+        phone_number = phone_numbers[0] if phone_numbers else "Not Found"
 
-    # Extract name from the first line using spaCy and nameparser
-    name = extract_name_from_first_line(extracted_text)
-    first_name, last_name = process_names(name)
+        st.subheader("Parsed Data for Debugging")
+        st.write("Emails:", emails)
+        st.write("Phone Numbers:", phone_numbers)
+        st.write("Addresses:", address)
+        st.write("Name:", name)
+        st.write("First Name:", first_name)
+        st.write("Last Name:", last_name)
 
-    # Set default values if no data is found
-    email = emails[0] if emails else "Not Found"
-    phone_number = phone_numbers[0] if phone_numbers else "Not Found"
-    education = "Not Found"  # Assuming education extraction logic is not yet implemented
-    experience = "Not Found"  # Assuming experience extraction logic is not yet implemented
+        st.subheader("Google Form Autofill App")
 
-    # Display parsed data for debugging
-    st.subheader("Parsed Data for Debugging")
-    st.write("Extracted Text:", extracted_text)
-    st.write("Emails:", emails)
-    st.write("Phone Numbers:", phone_numbers)
-    st.write("Addresses:", addresses)
-    st.write("Name:", name)
-    st.write("First Name:", first_name)
-    st.write("Last Name:", last_name)
+        form_url = st.text_input('Form URL')
 
-    # Display the form with pre-filled data
-    st.subheader("Fill the form with extracted data")
+        if st.button('Fill Form', key='fill_form_button'):
+            if not form_url:
+                st.error("Please enter the form URL")
+            else:
+                if 'driver' not in st.session_state:
+                    st.session_state.driver = get_chrome_driver()
 
-    # Form fields with pre-filled data
-    first_name_input = st.text_input("First Name", value=first_name)
-    last_name_input = st.text_input("Last Name", value=last_name)
-    email_input = st.text_input("Email", value=email)
-    phone_number_input = st.text_input("Phone Number", value=phone_number)
-    address_input = st.text_area("Address", value=address, height=100)
-    education_input = st.text_area("Education", value=education, height=100)
-    experience_input = st.text_area("Experience", value=experience, height=100)
+                driver = st.session_state.driver
 
-    # When the user submits the form
-    if st.button("Submit"):
-        st.write("Form Submitted!")
-        st.write("First Name:", first_name_input)
-        st.write("Last Name:", last_name_input)
-        st.write("Email:", email_input)
-        st.write("Phone Number:", phone_number_input)
-        st.write("Address:", address_input)
-        st.write("Education:", education_input)
-        st.write("Experience:", experience_input)
+                try:
+                    driver.get(form_url)
+                    time.sleep(3)
+                    data = []
+                    data.extend([first_name, last_name, email, address, phone_number])
+
+                    fill_form(driver, data)
+                    time.sleep(1)
+
+                    with st.sidebar:
+                        st.subheader("Form Submission")
+                        st.write("Would you like to submit the form or leave the browser open?")
+
+                        submit_form = st.button("Submit Form", key='submit_form')
+                        leave_open = st.button("Leave Browser Open", key='leave_button')
+
+                    if submit_form:
+                        try:
+                            submit_button = WebDriverWait(driver, 10).until(
+                                EC.element_to_be_clickable((By.XPATH, '//div[@role="button"]//span[text()="Submit"]'))
+                            )
+                            submit_button.click()
+                            st.write("Form has been submitted.")
+                        except Exception as e:
+                            st.error(f"An error occurred while submitting the form: {e}")
+                        finally:
+                            driver.quit()
+                    elif leave_open:
+                        st.write("The browser window is left open. Please submit the form manually.")
+
+                except Exception as e:
+                  st.error(f"An error occurred: {e}")
+                  driver.quit()
+
+
+        #time.sleep(15)
+        #driver.quit()
+
+if __name__ == "__main__":
+    main()
